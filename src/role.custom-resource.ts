@@ -39,6 +39,11 @@ export interface RoleProps {
    * @default no connection to any database is granted
    */
   readonly databaseName?: string
+
+  /**
+   * Grant connect to database
+   */
+  readonly grantConnect?: boolean
 }
 
 export class Role extends CustomResource {
@@ -56,6 +61,7 @@ export class Role extends CustomResource {
         SecretArn: props.provider.secret.secretArn,
         PasswordArn: props.passwordArn,
         DatabaseName: props.database ? props.database.databaseName : props.databaseName,
+        GrantConnect: props.grantConnect ?? true,
       },
     })
     this.node.addDependency(props.provider)

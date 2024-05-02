@@ -48,6 +48,11 @@ interface RoleProps {
    * Optional database to which role is granted connect permissions.
    */
   DatabaseName?: string
+
+  /**
+   * Optional run grant connect statement?
+   */
+  GrantConnect?: boolean
 }
 
 interface DatabaseProps {
@@ -88,7 +93,7 @@ const jumpTable: JumpTable = {
           "start transaction",
           format("create role %I with login password %L", resourceId, password),
         ]
-        if (props.DatabaseName) {
+        if (props.DatabaseName && props.GrantConnect) {
           // grant connect to database if database already exists
           sql.push(
             format(
@@ -115,7 +120,7 @@ const jumpTable: JumpTable = {
             sql.push(format("alter role %I rename to %I", oldResourceId, resourceId))
           }
           sql.push(format("alter role %I with password %L", resourceId, password))
-          if (props.DatabaseName) {
+          if (props.DatabaseName && props.GrantConnect) {
             sql.push(
               format("grant connect on database %I to %I", props.DatabaseName, resourceId)
             )
@@ -130,32 +135,36 @@ const jumpTable: JumpTable = {
         if (oldResourceId !== resourceId) {
           sql.push(format("alter role %I rename to %I", oldResourceId, resourceId))
         }
-        sql.push(
-          format(
-            "DO $$BEGIN\nIF EXISTS (select from pg_database where datname = '%s' and datistemplate = false) THEN grant connect on database %I to %I; END IF;\nEND$$;",
-            props.DatabaseName,
-            props.DatabaseName,
-            resourceId
+        if (props.GrantConnect) {
+          sql.push(
+            format(
+              "DO $$BEGIN\nIF EXISTS (select from pg_database where datname = '%s' and datistemplate = false) THEN grant connect on database %I to %I; END IF;\nEND$$;",
+              props.DatabaseName,
+              props.DatabaseName,
+              resourceId
+            )
           )
-        )
+        }
         sql.push("commit")
         return sql
       }
     },
     Delete: (resourceId: string, props: RoleProps) => {
       // TODO: if user is owner of a database, assign ownership to master user?
-      return [
-        "start transaction",
-        format(
-          "DO $$BEGIN\nIF EXISTS (select from pg_catalog.pg_roles WHERE rolname = '%s') AND EXISTS (select from pg_database WHERE datname = '%s') THEN revoke all privileges on database %I from %I; END IF;\nEND$$;",
-          resourceId,
-          props.DatabaseName,
-          props.DatabaseName,
-          resourceId
-        ),
-        format("drop role if exists %I", resourceId),
-        "commit",
-      ]
+      const sql = ["start transaction"]
+      if (props.GrantConnect) {
+        sql.push(
+          format(
+            "DO $$BEGIN\nIF EXISTS (select from pg_catalog.pg_roles WHERE rolname = '%s') AND EXISTS (select from pg_database WHERE datname = '%s') THEN revoke all privileges on database %I from %I; END IF;\nEND$$;",
+            resourceId,
+            props.DatabaseName,
+            props.DatabaseName,
+            resourceId
+          )
+        )
+      }
+      sql.push(format("drop role if exists %I", resourceId), "commit")
+      return sql
     },
   },
   database: {
